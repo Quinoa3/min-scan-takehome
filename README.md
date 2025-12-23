@@ -97,7 +97,7 @@ go test ./pkg/processing
 ```
 (Run `go mod tidy` first if dependencies are missing.)
 
-Integration test for Postgres upsert behavior (requires a running Postgres reachable at `TEST_DATABASE_URL` or `postgres://postgres:postgres@localhost:5433/scans?sslmode=disable`):
+Integration test for Postgres upsert behavior (requires a running Postgres reachable at `TEST_DATABASE_URL` or `postgres://postgres:postgres@localhost:5433/scans_test?sslmode=disable`):
 ```bash
 go test ./pkg/storage/postgres
 ```
