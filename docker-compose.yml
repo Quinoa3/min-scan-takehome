@@ -1,5 +1,19 @@
-version: '3'
+version: "3"
 services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: scans
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   # Starts the P/S emulator
   pubsub:
@@ -20,14 +34,39 @@ services:
       pubsub:
         condition: service_healthy
     command: PUT http://pubsub:8085/v1/projects/test-project/topics/scan-topic
-
   # Creates a subscription
   mk-subscription:
     image: alpine/httpie
     depends_on:
       mk-topic:
         condition: service_completed_successfully
-    command: PUT http://pubsub:8085/v1/projects/test-project/subscriptions/scan-sub topic=projects/test-project/topics/scan-topic --ignore-stdin 
+    command: PUT http://pubsub:8085/v1/projects/test-project/subscriptions/scan-sub topic=projects/test-project/topics/scan-topic --ignore-stdin
+
+  # Creates a DLQ topic for malformed messages
+  mk-dlq-topic:
+    image: alpine/httpie
+    depends_on:
+      pubsub:
+        condition: service_healthy
+    command: PUT http://pubsub:8085/v1/projects/test-project/topics/scan-malformed-dlq
+
+  processor:
+    depends_on:
+      mk-subscription:
+        condition: service_completed_successfully
+      mk-dlq-topic:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUBSUB_PROJECT_ID: test-project
+      PUBSUB_SUBSCRIPTION_ID: scan-sub
+      PUBSUB_DLQ_TOPIC: scan-malformed-dlq
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/scans?sslmode=disable
+    build:
+      context: .
+      dockerfile: ./cmd/processor/Dockerfile
 
   # Runs the "scanner"
   scanner:

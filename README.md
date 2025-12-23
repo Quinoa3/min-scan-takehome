@@ -53,3 +53,69 @@ To help set expectations, we believe you should aim to take no more than 4 hours
 We understand that you have other responsibilities, so if you think you’ll need more than 5 business days, just let us know when you expect to send a reply.
 
 Please don’t hesitate to ask any follow-up questions for clarification.
+
+---
+
+## Solution Overview
+
+Added a new `processor` service that consumes the `scan-sub` subscription from the Pub/Sub emulator and stores the latest scan per `(ip, port, service)` in Postgres. The processor normalizes both data formats, applies at-least-once semantics, and rejects out-of-order writes via a timestamp-aware `UPSERT`.
+
+
+
+Key pieces:
+- `pkg/processing`: Parses incoming messages and normalizes the response string for data versions 1 and 2. Also contains logic to handle malformed messages and publish them to a DLQ topic. Finally calls the storage layer to persist the data is no issues.
+- `pkg/storage`: Repository interface plus Postgres implementation using a single upsert.
+- `cmd/processor`: Subscriber that acknowledges messages only after a successful upsert or successful publishing malformed message to dql; 
+- `docker-compose.yml`: Adds Postgres and wires the processor into the existing scanner/emulator stack; creates a `scan-dlq` topic.
+
+## Running locally
+
+1) Start everything:
+```bash
+docker compose up --build
+```
+This launches the Pub/Sub emulator, topic/subscription, scanner, Postgres, and the new processor.
+
+2) Inspect stored scans (example):
+```bash
+docker compose exec postgres psql -U postgres -d scans -c "select ip, port, service, last_scanned, response from scans limit 5;"
+```
+
+Environment defaults used by the processor (override as needed):
+- `PUBSUB_PROJECT_ID` (default: `test-project`)
+- `PUBSUB_SUBSCRIPTION_ID` (default: `scan-sub`)
+- `PUBSUB_DLQ_TOPIC` (default: ``) no value disables dlq publishing of malformed messages just acks them from the original topic. 
+- `DATABASE_URL` (default: `postgres://postgres:postgres@postgres:5432/scans?sslmode=disable`)
+- `PROCESSOR_WORKERS` (default: number of CPUs)
+- `PROCESSOR_MAX_OUTSTANDING` (default: `200`)
+
+## Testing
+
+Unit test for message parsing/normalization and handler/DLQ tests:
+```bash
+go test ./pkg/processing
+```
+(Run `go mod tidy` first if dependencies are missing.)
+
+Integration test for Postgres upsert behavior (requires a running Postgres reachable at `TEST_DATABASE_URL` or `postgres://postgres:postgres@localhost:5433/scans?sslmode=disable`):
+```bash
+go test ./pkg/storage/postgres
+```
+
+To spin up a local Postgres dedicated for tests, you can use the provided docker-compose.test file:
+```bash
+docker compose -f docker-compose.test.yml up -d
+TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5433/scans?sslmode=disable go test ./pkg/storage/postgres
+docker compose -f docker-compose.test.yml down
+```
+
+## Notes on ordering & durability
+
+- Upserts use `WHERE EXCLUDED.last_scanned >= scans.last_scanned` to drop older/out-of-order messages while keeping at-least-once safety.
+- Pub/Sub subscriber runs with multiple goroutines and acknowledges only after the database write succeeds.
+
+## Other Notes
+Go version was updated to 1.23 this happened due to dependencies pulled in for the google pub sub client. Tried to figure out which version of the google pub sub client would allow version to remain 1.20 but was eaiser just to update the docker image versions to 1.23 to match. 
+Malformed messages will be pushed to a dlq and acked in the original topic. These messages cannot be retired without fixing the message or changes to the code so nacking them doesn't make sense. If they can't be pused to the dql (timeout or network issues) then the message is nacked on the original topic. 
+You can disable dlq publishing by not setting. Messages that are malformed will simply be acked if dlq publishing is disabled. 
+Congifuration can be added to google pub sub for number of retries after a nack and can auto push to another dql if to many retries fail. (not configured on the emulator)
