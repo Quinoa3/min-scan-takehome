@@ -105,7 +105,7 @@ go test ./pkg/storage/postgres
 To spin up a local Postgres dedicated for tests, you can use the provided docker-compose.test file:
 ```bash
 docker compose -f docker-compose.test.yml up -d
-TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5433/scans?sslmode=disable go test ./pkg/storage/postgres
+go test ./pkg/storage/postgres
 docker compose -f docker-compose.test.yml down
 ```
 
