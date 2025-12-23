@@ -115,7 +115,7 @@ docker compose -f docker-compose.test.yml down
 - Pub/Sub subscriber runs with multiple goroutines and acknowledges only after the database write succeeds.
 
 ## Other Notes
-Go version was updated to 1.23 this happened due to dependencies pulled in for the google pub sub client. Tried to figure out which version of the google pub sub client would allow version to remain 1.20 but was eaiser just to update the docker image versions to 1.23 to match. 
-Malformed messages will be pushed to a dlq and acked in the original topic. These messages cannot be retired without fixing the message or changes to the code so nacking them doesn't make sense. If they can't be pused to the dql (timeout or network issues) then the message is nacked on the original topic. 
-You can disable dlq publishing by not setting. Messages that are malformed will simply be acked if dlq publishing is disabled. 
-Congifuration can be added to google pub sub for number of retries after a nack and can auto push to another dql if to many retries fail. (not configured on the emulator)
+- Go version was updated to 1.23 this happened due to dependencies pulled in for the google pub sub client. Tried to figure out which version of the google pub sub client would allow version to remain 1.20 but was eaiser just to update the docker image versions to 1.23 to match. 
+- Malformed messages will be pushed to a dlq and acked in the original topic. These messages cannot be retired without fixing the message or changes to the code so nacking them doesn't make sense. If they can't be pused to the dql (timeout or network issues) then the message is nacked on the original topic. 
+- You can disable dlq publishing by not setting. Messages that are malformed will simply be acked if dlq publishing is disabled. 
+- Congifuration can be added to google pub sub for number of retries after a nack and can auto push to another dql if to many retries fail. (not configured on the emulator)
